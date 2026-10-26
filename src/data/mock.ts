@@ -2,14 +2,32 @@
    Nothing in this file is a real publication, real trial, or real user activity. It exists only to demonstrate
    the intended feed experience and is always labelled "Sample" in the UI. Real journal names are used solely so
    journal following and filtering can be demonstrated; none of these articles appeared in those journals.
-   Replace with an API that returns the same shape (see normalizeMock in app.js).
+   Served by the mock API adapter (src/api/mock.ts), which normalizes papers with normalizeMock (src/domain/papers.ts).
+   A real backend replaces all of this; see docs/BACKEND.md.
 
    Paper fields: id, spec (specialty id), sub (subspecialty label from RoundsData.subtags), type (RoundsData.studyTypes
    key), j (journal id), ago (days since online publication, so the sample stays current), printAhead (months until the
    print issue, demonstrates online-first dates), n (participants), k (studies pooled), cites, oa, topics, finding,
    pop / outcome (at-a-glance), abstract, signals, c = [saves, discussions, appraisals, interested],
    rob = community risk-of-bias judgements [low, some concerns, high], about (id of the paper a commentary discusses). */
-window.RoundsMock={
+import type { DiscussionHighlight, Job, Profile, Project, TopicTrend } from '../types';
+
+/** Compact sample-paper record; see the field list above. */
+export interface SamplePaperRecord {
+  id: string; spec: string; sub?: string; type: string; j: string; ago: number; printAhead?: number;
+  title: string; authors?: string; n?: number; k?: number; cites?: number; oa?: boolean; topics?: string[];
+  finding?: string; pop?: string; outcome?: string; abstract?: string; signals?: string[];
+  c?: [saves: number, discussions: number, appraisals: number, interested: number];
+  rob?: [low: number, some: number, high: number]; about?: string;
+}
+
+export interface SampleDataset {
+  papers: SamplePaperRecord[];
+  discussions: DiscussionHighlight[];
+  topicTrends: TopicTrend[];
+}
+
+export const sampleDataset: SampleDataset = {
 papers:[
 {id:'s01',spec:'cardiology',sub:'Heart failure',type:'rct',j:'jacc',ago:4,printAhead:2,
  title:'In-hospital initiation of SGLT2 inhibition for acute decompensated heart failure: a pragmatic multicentre randomized trial',
@@ -281,3 +299,20 @@ discussions:[
 // Sample topic momentum: [topic, specialty id, % change in papers + discussion vs prior 90 days]. Fictional figures.
 topicTrends:[['Blood biomarkers','neurology',48],['Pulsed-field ablation','cardiology',36],['Telerehabilitation','rehabilitation',29],['AI second reader','radiology',41],['Tenecteplase','neurology',22],['Lipoprotein(a)','cardiology',18],['Antibiotic duration','infectious',25]]
 };
+
+// Starting profile for a visitor who has not edited theirs.
+export const defaultProfile: Profile = {display:'Guest researcher',role:'Medical student',bio:'Interested in rigorous research and interdisciplinary collaboration.',interests:'Neurology, PM&R, Research Methods'};
+
+// Illustrative collaboration concepts and roles. Not real recruitment; always shown as samples.
+export const sampleProjects: Project[] = [
+{id:'sample-pm',title:'Longitudinal mobility and recovery following low back pain',specialty:'PM&R',stage:'Study design',needs:'Methods collaborator · Statistician',seeking:['Methods advisor','Statistician'],intro:'Develop an observational study around objectively measured function and recovery trajectories using a self-service research dataset.',tags:['Spine','Longitudinal methods','Wearables'],kind:'Data analysis',sample:true},
+{id:'sample-n',title:'Evidence map of peripheral nerve entrapment interventions',specialty:'Neurology',stage:'Protocol development',needs:'Screeners · Faculty advisor',seeking:['Student researcher','Methods advisor'],intro:'Coordinate a transparent evidence map of diagnostic and therapeutic approaches for peripheral nerve entrapment.',tags:['PNS','Pain','Evidence synthesis'],kind:'Evidence review',sample:true},
+{id:'sample-c',title:'Real-world prognostic markers after heart failure hospitalization',specialty:'Cardiology',stage:'Idea development',needs:'Clinical advisor · Coauthors',seeking:['Coauthor','Principal investigator (PI)'],intro:'Explore predictors of short-term return to care and how reported clinical outcomes vary across cohorts.',tags:['Outcomes','Epidemiology','Real-world data'],kind:'Cohort study',sample:true},
+{id:'sample-o',title:'Reproducibility of machine learning in oncologic imaging',specialty:'Oncology',stage:'Methods planning',needs:'Imaging collaborator · Reviewer',seeking:['Coauthor','Data analyst'],intro:'Create a reproducibility-focused structured assessment of publicly available oncology imaging studies.',tags:['AI evaluation','Imaging','Open science'],kind:'Methods research',sample:true}
+];
+
+export const sampleJobs: Job[] = [
+{id:'job-a',title:'Clinical outcomes research assistant',org:'Academic rehabilitation research team',specialty:'PM&R',position:'Research assistant',type:'Part-time',mode:'Hybrid',summary:'An illustrative role focused on data abstraction, outcomes measures, literature review, and research coordination.',sample:true},
+{id:'job-b',title:'Systematic review coauthor opportunity',org:'Interdisciplinary methods group',specialty:'Neurology',position:'Coauthor / Reviewer',type:'Collaboration',mode:'Remote',summary:'An illustrative opportunity for reviewers comfortable with screening, extraction, and reproducibility practices.',sample:true},
+{id:'job-c',title:'Research data analyst',org:'Cardiovascular outcomes laboratory',specialty:'Cardiology',position:'Data analyst / Statistician',type:'Project-based',mode:'Remote',summary:'An illustrative role involving regression, longitudinal methods, and clear presentation of clinical research.',sample:true}
+];

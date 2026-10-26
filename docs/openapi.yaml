@@ -1,0 +1,556 @@
+openapi: 3.1.0
+info:
+  title: Rounds API
+  version: 0.1.0-draft
+  description: |
+    Contract the Rounds frontend's HTTP adapter (src/api/http.ts) already speaks. Schemas mirror src/types.
+    Draft: nothing here is implemented server-side yet. See docs/BACKEND.md for conventions and open questions.
+
+    Conventions
+    - JSON everywhere; timestamps are ISO 8601 UTC strings.
+    - Auth: session cookie set by POST /auth/login (the client sends `credentials: include`). Every /me/* route
+      requires a session; public reads (GET /papers, /discussions, /projects, /jobs) do not.
+    - Paper keys are `${source}:${id}` (e.g. `MED:39012345`, `DEMO:s01`, `DOI:10.1000/xyz`) and must be
+      URL-encoded in paths.
+    - Lists return `{ items, nextCursor }`. Clients currently read only `items`; pagination via `?cursor=` is reserved.
+    - Errors return `{ error: { code, message } }` with an appropriate status; `message` may be shown to users.
+    - The server stamps `author`, `id`, `createdAt`, `authorId` — clients never send them.
+servers:
+  - url: https://api.rounds.example/v1
+    description: Placeholder. Set VITE_API_BASE_URL in the frontend.
+
+tags:
+  - name: Auth
+  - name: Me
+  - name: Library
+  - name: Content
+  - name: Discussions
+  - name: Collaboration
+
+paths:
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: 'Start a session (documented only; no login UI yet)'
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, format: password }
+      responses:
+        '200': { description: 'Signed in; session cookie set.', content: { application/json: { schema: { $ref: '#/components/schemas/User' } } } }
+        '401': { $ref: '#/components/responses/Error' }
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: 'End the session (documented only)'
+      responses:
+        '204': { description: 'Signed out.' }
+
+  /me:
+    get:
+      tags: [Me]
+      summary: 'Current user'
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/User' } } } }
+        '401': { $ref: '#/components/responses/Error' }
+  /me/profile:
+    put:
+      tags: [Me]
+      summary: 'Replace the editable profile fields'
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/Profile' } } } }
+      responses:
+        '200': { description: 'Updated user', content: { application/json: { schema: { $ref: '#/components/schemas/User' } } } }
+        '422': { $ref: '#/components/responses/Error' }
+  /me/preferences:
+    get:
+      tags: [Me]
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Preferences' } } } }
+    patch:
+      tags: [Me]
+      summary: 'Partial update; returns the full stored preferences'
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PreferencesPatch' } } } }
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Preferences' } } } }
+  /me/role-tags:
+    get:
+      tags: [Me]
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/RoleTagList' } } } }
+    post:
+      tags: [Me]
+      summary: 'Request a licensed-role tag (status starts as pending)'
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/NewRoleTag' } } } }
+      responses:
+        '201': { description: 'Created', content: { application/json: { schema: { $ref: '#/components/schemas/RoleTag' } } } }
+        '409': { description: 'The user already has this role tag.', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /me/role-tags/{id}:
+    delete:
+      tags: [Me]
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses:
+        '204': { description: 'Removed.' }
+
+  /me/bookmarks:
+    get:
+      tags: [Library]
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/BookmarkList' } } } }
+  /me/bookmarks/{paperKey}:
+    parameters: [{ $ref: '#/components/parameters/PaperKey' }]
+    put:
+      tags: [Library]
+      summary: 'Bookmark a paper (idempotent). A new bookmark joins the Reading list.'
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PaperBody' } } } }
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Bookmark' } } } }
+    delete:
+      tags: [Library]
+      summary: 'Remove the bookmark and drop the paper from every collection'
+      responses:
+        '204': { description: 'Removed.' }
+  /me/collections:
+    get:
+      tags: [Library]
+      summary: 'Collections; always includes `reading` (Reading list)'
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/CollectionList' } } } }
+    post:
+      tags: [Library]
+      summary: 'Create a collection, optionally seeded with one paper (which is bookmarked too)'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, maxLength: 40 }
+                paper: { $ref: '#/components/schemas/Paper' }
+      responses:
+        '201': { description: 'Created', content: { application/json: { schema: { $ref: '#/components/schemas/Collection' } } } }
+  /me/collections/{id}:
+    delete:
+      tags: [Library]
+      summary: 'Delete a collection. Papers stay bookmarked; uncollected ones return to the Reading list. `reading` cannot be deleted (400).'
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses:
+        '204': { description: 'Deleted.' }
+        '400': { $ref: '#/components/responses/Error' }
+  /me/collections/{id}/papers/{paperKey}:
+    parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/PaperKey' }]
+    put:
+      tags: [Library]
+      summary: 'Add a paper to a collection (bookmarks it if needed)'
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PaperBody' } } } }
+      responses:
+        '204': { description: 'Added.' }
+    delete:
+      tags: [Library]
+      responses:
+        '204': { description: 'Removed from the collection.' }
+
+  /me/appraisals:
+    get:
+      tags: [Library]
+      summary: 'The user''s private appraisals keyed by paper key'
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { type: object, additionalProperties: { $ref: '#/components/schemas/Appraisal' } } } } }
+  /me/appraisals/{paperKey}:
+    put:
+      tags: [Library]
+      parameters: [{ $ref: '#/components/parameters/PaperKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AppraisalInput' } } } }
+      responses:
+        '200': { description: 'Saved (server sets `updated`)', content: { application/json: { schema: { $ref: '#/components/schemas/Appraisal' } } } }
+  /me/ratings:
+    get:
+      tags: [Library]
+      responses:
+        '200': { description: 'Paper key → 1–5', content: { application/json: { schema: { type: object, additionalProperties: { type: integer, minimum: 1, maximum: 5 } } } } }
+  /me/ratings/{paperKey}:
+    parameters: [{ $ref: '#/components/parameters/PaperKey' }]
+    put:
+      tags: [Library]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [rating], properties: { rating: { type: integer, minimum: 1, maximum: 5 } } } } }
+      responses: { '204': { description: 'Saved.' } }
+    delete:
+      tags: [Library]
+      responses: { '204': { description: 'Cleared.' } }
+  /me/notes:
+    get:
+      tags: [Library]
+      responses:
+        '200': { description: 'Paper key → private note text', content: { application/json: { schema: { type: object, additionalProperties: { type: string, maxLength: 10000 } } } } }
+  /me/notes/{paperKey}:
+    parameters: [{ $ref: '#/components/parameters/PaperKey' }]
+    put:
+      tags: [Library]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [text], properties: { text: { type: string, maxLength: 10000 } } } } }
+      responses: { '204': { description: 'Saved.' } }
+    delete:
+      tags: [Library]
+      responses: { '204': { description: 'Deleted.' } }
+  /me/interests:
+    get:
+      tags: [Library]
+      responses:
+        '200': { description: 'Paper key → reasons', content: { application/json: { schema: { type: object, additionalProperties: { type: array, items: { type: string } } } } } }
+  /me/interests/{paperKey}:
+    parameters: [{ $ref: '#/components/parameters/PaperKey' }]
+    put:
+      tags: [Library]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [reasons], properties: { reasons: { type: array, minItems: 1, items: { type: string } } } } } }
+      responses: { '204': { description: 'Saved.' } }
+    delete:
+      tags: [Library]
+      responses: { '204': { description: 'Interest removed.' } }
+  /me/paper-comments:
+    get:
+      tags: [Me]
+      summary: 'Comments written by the current user (activity counts)'
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/PaperCommentList' } } } }
+
+  /papers:
+    get:
+      tags: [Content]
+      summary: 'Rounds paper catalogue with community stats (replaces the sample dataset)'
+      security: []
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/PaperList' } } } }
+  /papers/{paperKey}/comments:
+    parameters: [{ $ref: '#/components/parameters/PaperKey' }]
+    get:
+      tags: [Discussions]
+      security: []
+      responses:
+        '200': { description: 'Oldest first', content: { application/json: { schema: { $ref: '#/components/schemas/PaperCommentList' } } } }
+    post:
+      tags: [Discussions]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/NewComment' } } } }
+      responses:
+        '201': { description: 'Created', content: { application/json: { schema: { $ref: '#/components/schemas/PaperComment' } } } }
+  /discussions:
+    get:
+      tags: [Discussions]
+      summary: 'Evidence discussions, oldest first, with comments embedded'
+      security: []
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/ThreadList' } } } }
+    post:
+      tags: [Discussions]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/NewThread' } } } }
+      responses:
+        '201': { description: 'Created', content: { application/json: { schema: { $ref: '#/components/schemas/Thread' } } } }
+        '422': { $ref: '#/components/responses/Error' }
+  /discussions/{id}/comments:
+    post:
+      tags: [Discussions]
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/NewComment' } } } }
+      responses:
+        '201': { description: 'Created', content: { application/json: { schema: { $ref: '#/components/schemas/Comment' } } } }
+        '404': { $ref: '#/components/responses/Error' }
+  /discussions/highlights:
+    get:
+      tags: [Content]
+      summary: 'Most-discussed teasers for the right rail'
+      security: []
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: '#/components/schemas/DiscussionHighlight' } } } } } } }
+  /topics/trending:
+    get:
+      tags: [Content]
+      security: []
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: '#/components/schemas/TopicTrend' } } } } } } }
+
+  /projects:
+    get:
+      tags: [Collaboration]
+      summary: 'Visible projects; the user''s own drafts and sample concepts (`sample: true`)'
+      security: []
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: '#/components/schemas/Project' } } } } } } }
+    post:
+      tags: [Collaboration]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/NewProject' } } } }
+      responses:
+        '201': { description: 'Created', content: { application/json: { schema: { $ref: '#/components/schemas/Project' } } } }
+  /jobs:
+    get:
+      tags: [Collaboration]
+      security: []
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: '#/components/schemas/Job' } } } } } } }
+    post:
+      tags: [Collaboration]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/NewJob' } } } }
+      responses:
+        '201': { description: 'Created', content: { application/json: { schema: { $ref: '#/components/schemas/Job' } } } }
+
+security:
+  - session: []
+
+components:
+  securitySchemes:
+    session: { type: apiKey, in: cookie, name: rounds_session }
+  parameters:
+    Id: { name: id, in: path, required: true, schema: { type: string } }
+    PaperKey: { name: paperKey, in: path, required: true, description: 'URL-encoded `${source}:${id}`', schema: { type: string } }
+  responses:
+    Error:
+      description: Error
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties: { code: { type: string }, message: { type: string } }
+    Profile:
+      type: object
+      required: [display, role, bio, interests]
+      properties:
+        display: { type: string, maxLength: 60, minLength: 1 }
+        role: { type: string, description: Self-reported professional role }
+        bio: { type: string, maxLength: 550 }
+        interests: { type: string, maxLength: 250 }
+    User:
+      allOf: [{ $ref: '#/components/schemas/Profile' }, { type: object, required: [id], properties: { id: { type: string } } }]
+    RoleTag:
+      type: object
+      required: [id, role, state, institution, status, createdAt]
+      properties:
+        id: { type: string }
+        role: { type: string }
+        state: { type: string }
+        institution: { type: string }
+        status: { type: string, enum: [pending, verified, rejected] }
+        createdAt: { type: string, format: date-time }
+    NewRoleTag:
+      type: object
+      required: [role]
+      properties: { role: { type: string }, state: { type: string, maxLength: 60 }, institution: { type: string, maxLength: 100 } }
+    RoleTagList: { type: object, required: [items], properties: { items: { type: array, items: { $ref: '#/components/schemas/RoleTag' } } } }
+    Preferences:
+      type: object
+      required: [following, pinned, feedJournals, specJournals, journalTopics, specJournalTopics, dataMode, scope]
+      properties:
+        following: { type: array, items: { type: string }, description: Followed specialty ids }
+        pinned: { type: array, items: { type: string } }
+        feedJournals: { type: array, items: { type: string } }
+        specJournals: { type: object, additionalProperties: { type: array, items: { type: string } } }
+        journalTopics: { type: object, additionalProperties: { type: array, items: { type: string } } }
+        specJournalTopics: { type: object, additionalProperties: { type: object, additionalProperties: { type: array, items: { type: string } } } }
+        dataMode: { type: string, enum: [demo, live] }
+        scope: { type: string, enum: [foryou, discover] }
+    PreferencesPatch:
+      type: object
+      description: Any subset of Preferences.
+      additionalProperties: false
+      properties:
+        following: { type: array, items: { type: string }, description: Followed specialty ids }
+        pinned: { type: array, items: { type: string } }
+        feedJournals: { type: array, items: { type: string } }
+        specJournals: { type: object, additionalProperties: { type: array, items: { type: string } } }
+        journalTopics: { type: object, additionalProperties: { type: array, items: { type: string } } }
+        specJournalTopics: { type: object, additionalProperties: { type: object, additionalProperties: { type: array, items: { type: string } } } }
+        dataMode: { type: string, enum: [demo, live] }
+        scope: { type: string, enum: [foryou, discover] }
+    CommunityStats:
+      type: object
+      properties:
+        saves: { type: integer }
+        discussions: { type: integer }
+        appraisals: { type: integer }
+        interested: { type: integer }
+        rob: { type: [array, 'null'], items: { type: integer }, minItems: 3, maxItems: 3, description: '[low, some concerns, high]' }
+    Paper:
+      type: object
+      description: Normalized paper (src/types/paper.ts). Extra source fields are allowed.
+      required: [source, id, title, authorString, journalId, journalTitle, date, printAhead, type, n, specialty, topics, finding, findingSource]
+      additionalProperties: true
+      properties:
+        source: { type: string }
+        id: { type: string }
+        demo: { type: boolean }
+        title: { type: string }
+        authorString: { type: string }
+        journalId: { type: string }
+        journalTitle: { type: string }
+        date: { type: string, description: 'YYYY-MM-DD or empty' }
+        firstPublicationDate: { type: string }
+        pubYear: { type: string }
+        printAhead: { type: string }
+        type: { type: string, description: Key of ReferenceData.studyTypes }
+        n: { type: integer }
+        k: { type: integer }
+        specialty: { type: string }
+        sub: { type: string }
+        topics: { type: array, items: { type: string } }
+        citedByCount: { type: integer }
+        isOpenAccess: { type: string, enum: ['Y', 'N'] }
+        finding: { type: string }
+        findingSource: { type: string, enum: [sample, abstract] }
+        abstractText: { type: string }
+        pop: { type: string }
+        outcome: { type: string }
+        signals: { type: array, items: { type: string } }
+        about: { type: string }
+        doi: { type: string }
+        pmid: { type: string }
+        community: { $ref: '#/components/schemas/CommunityStats' }
+    PaperBody: { type: object, required: [paper], properties: { paper: { $ref: '#/components/schemas/Paper' } } }
+    PaperList: { type: object, required: [items], properties: { items: { type: array, items: { $ref: '#/components/schemas/Paper' } }, nextCursor: { type: [string, 'null'] } } }
+    PaperRef:
+      type: object
+      required: [key, source, id, title]
+      properties:
+        key: { type: string }
+        source: { type: string }
+        id: { type: string }
+        doi: { type: string }
+        pmid: { type: string }
+        title: { type: string }
+        authors: { type: string }
+        journal: { type: string }
+        year: { type: string }
+    AuthorSnapshot:
+      type: object
+      required: [id, display, roles]
+      properties: { id: { type: string }, display: { type: string }, roles: { type: array, items: { type: string } } }
+    NewComment:
+      type: object
+      required: [body, refs]
+      properties:
+        body: { type: string, minLength: 1, maxLength: 3000 }
+        refs: { type: array, items: { $ref: '#/components/schemas/PaperRef' } }
+    Comment:
+      allOf:
+        - $ref: '#/components/schemas/NewComment'
+        - type: object
+          required: [id, author, createdAt]
+          properties: { id: { type: string }, author: { $ref: '#/components/schemas/AuthorSnapshot' }, createdAt: { type: string, format: date-time } }
+    PaperComment:
+      allOf: [{ $ref: '#/components/schemas/Comment' }, { type: object, required: [paperKey], properties: { paperKey: { type: string } } }]
+    PaperCommentList: { type: object, required: [items], properties: { items: { type: array, items: { $ref: '#/components/schemas/PaperComment' } } } }
+    Evidence:
+      type: object
+      properties:
+        level: { type: string, enum: ['', '1', '2', '3', '4', '5'] }
+        grade: { type: string, enum: ['', high, moderate, low, verylow] }
+        rating: { type: integer, minimum: 0, maximum: 5 }
+    NewThread:
+      type: object
+      required: [title, specialty, sections, refs, paper, paperKey, url, evidence]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 140 }
+        specialty: { type: string, description: Specialty display name }
+        sections: { type: object, description: 'Keys from ReferenceData.discussionSections; at least one non-empty', additionalProperties: { type: string, maxLength: 3000 } }
+        refs: { type: array, items: { $ref: '#/components/schemas/PaperRef' } }
+        paper: { oneOf: [{ $ref: '#/components/schemas/PaperRef' }, { type: 'null' }] }
+        paperKey: { type: string }
+        url: { type: string }
+        evidence: { oneOf: [{ $ref: '#/components/schemas/Evidence' }, { type: 'null' }] }
+    Thread:
+      allOf:
+        - $ref: '#/components/schemas/NewThread'
+        - type: object
+          required: [id, author, createdAt, comments]
+          properties:
+            id: { type: string }
+            author: { $ref: '#/components/schemas/AuthorSnapshot' }
+            createdAt: { type: string, format: date-time }
+            comments: { type: array, items: { $ref: '#/components/schemas/Comment' } }
+    ThreadList: { type: object, required: [items], properties: { items: { type: array, items: { $ref: '#/components/schemas/Thread' } }, nextCursor: { type: [string, 'null'] } } }
+    DiscussionHighlight:
+      type: object
+      required: [paper, q, excerpt, replies, roles, ago]
+      properties: { paper: { type: string }, q: { type: string }, excerpt: { type: string }, replies: { type: integer }, roles: { type: string }, ago: { type: string } }
+    TopicTrend:
+      type: array
+      description: '[topic, specialty id, % change vs previous 90 days]'
+      prefixItems: [{ type: string }, { type: string }, { type: number }]
+      minItems: 3
+      maxItems: 3
+    AppraisalInput:
+      type: object
+      required: [tool, domains, level, levelNote, grade, gradeNote]
+      properties:
+        tool: { type: string, description: Key of ReferenceData.tools }
+        domains: { type: object, additionalProperties: { type: object, properties: { rating: { type: string }, comment: { type: string, maxLength: 1600 } } } }
+        level: { type: string }
+        levelNote: { type: string }
+        grade: { type: string }
+        gradeNote: { type: string }
+    Appraisal:
+      allOf: [{ $ref: '#/components/schemas/AppraisalInput' }, { type: object, required: [updated], properties: { updated: { type: string, format: date-time } } }]
+    Bookmark:
+      type: object
+      required: [paperKey, paper, savedAt]
+      properties: { paperKey: { type: string }, paper: { $ref: '#/components/schemas/Paper' }, savedAt: { type: string } }
+    BookmarkList: { type: object, required: [items], properties: { items: { type: array, items: { $ref: '#/components/schemas/Bookmark' } } } }
+    Collection:
+      type: object
+      required: [id, name, paperKeys]
+      properties: { id: { type: string }, name: { type: string }, paperKeys: { type: array, items: { type: string } } }
+    CollectionList: { type: object, required: [items], properties: { items: { type: array, items: { $ref: '#/components/schemas/Collection' } } } }
+    Irb:
+      type: object
+      properties: { status: { type: string }, protocol: { type: string }, institution: { type: string }, file: { type: string, description: File name only } }
+    NewProject:
+      type: object
+      required: [title, specialty, stage, needs, seeking, intro, tags, kind]
+      properties:
+        title: { type: string, maxLength: 130 }
+        specialty: { type: string }
+        stage: { type: string }
+        needs: { type: string }
+        seeking: { type: array, items: { type: string } }
+        irb: { $ref: '#/components/schemas/Irb' }
+        intro: { type: string, maxLength: 1600 }
+        tags: { type: array, items: { type: string } }
+        kind: { type: string }
+    Project:
+      allOf:
+        - $ref: '#/components/schemas/NewProject'
+        - type: object
+          required: [id, sample]
+          properties: { id: { type: string }, sample: { type: boolean }, authorId: { type: string }, createdAt: { type: string, format: date-time } }
+    NewJob:
+      type: object
+      required: [title, org, specialty, position, type, mode, summary]
+      properties:
+        title: { type: string, maxLength: 120 }
+        org: { type: string, maxLength: 100 }
+        specialty: { type: string }
+        position: { type: string }
+        type: { type: string }
+        mode: { type: string }
+        contact: { type: string, description: 'http(s) or mailto URL, or empty' }
+        summary: '{ type: string, maxLength: 1500 }'
+    Job:
+      allOf:
+        - $ref: '#/components/schemas/NewJob'
+        - type: object
+          required: [id, sample]
+          properties: { id: { type: string }, sample: { type: boolean }, authorId: { type: string }, createdAt: { type: string, format: date-time } }

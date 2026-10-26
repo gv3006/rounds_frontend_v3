@@ -4,7 +4,25 @@ A multi-view, interactive front-end prototype for discovering, discussing and cr
 
 ## Start locally
 
-From this folder, run `python -m http.server 8080` and visit http://localhost:8080. Alternatively use VS Code Live Server. `index.html` depends on `styles.css`, `data.js`, `mock-data.js`, and `app.js`.
+Requires Node 20+.
+
+```bash
+npm install
+npm run dev        # http://localhost:5173
+```
+
+Other scripts: `npm run typecheck`, `npm test` (Vitest), `npm run build` (typecheck + production bundle in `dist/`), `npm run preview`.
+
+Configuration lives in Vite env variables; copy `.env.example` to `.env.local` to change them. By default the app runs entirely in the browser on the sample dataset (`VITE_API_MODE=mock`).
+
+### Project layout
+
+- `index.html`, `styles.css`, `assets/` — page shell, styles, icons
+- `src/main.ts` — entry point; `src/app.js` — UI views and interactions (plain JS, not yet type-checked)
+- `src/api/` — the `RoundsApi` contract and its adapters: `mock.ts` (sample data + localStorage), `http.ts` (REST backend), `europepmc.ts` (live literature)
+- `src/types/` — shared entity types; `src/domain/papers.ts` — paper normalization and classification
+- `src/data/` — reference taxonomy (`reference.ts`), specialty/journal catalogs (`catalog.ts`), fictional sample dataset (`mock.ts`)
+- `docs/BACKEND.md`, `docs/openapi.yaml` — backend integration guide and API contract
 
 For a portable one-file alternative (no local asset dependencies), use `rounds_next.html` provided separately.
 
@@ -20,7 +38,7 @@ Primary navigation is five destinations: **Feed, Explore, Discussions, Collabora
 
 ### Data sources
 
-`mock-data.js` holds a **fictional sample dataset** (papers, findings, community activity, topic trends). It is the default so the full experience can be demonstrated, and it is labelled "Sample" throughout the UI. The status bar above the feed switches to **Live · Europe PMC**. Live records are normalized to the same shape (`normalizeLive` in `app.js`): study type comes from indexed publication types and abstract wording, sample size and conclusions are parsed from the abstract, future print dates are never shown as the publication date ("Online first" instead), specialty is taken from specialty journals or keyword scoring (weak matches stay "General medicine"), unindexed items without abstracts are treated as briefs, and duplicate titles are collapsed. Replace `mock-data.js` with an API returning the `normalizeMock` shape to retire the sample data.
+`src/data/mock.ts` holds a **fictional sample dataset** (papers, findings, community activity, topic trends). It is the default so the full experience can be demonstrated, and it is labelled "Sample" throughout the UI. The status bar above the feed switches to **Live · Europe PMC**. Live records are normalized to the same shape (`normalizeLive` in `src/domain/papers.ts`): study type comes from indexed publication types and abstract wording, sample size and conclusions are parsed from the abstract, future print dates are never shown as the publication date ("Online first" instead), specialty is taken from specialty journals or keyword scoring (weak matches stay "General medicine"), unindexed items without abstracts are treated as briefs, and duplicate titles are collapsed. A backend retires the sample data by serving `GET /papers` in the same shape; see `docs/BACKEND.md`.
 
 ## Available front-end views
 
@@ -37,7 +55,7 @@ Primary navigation is five destinations: **Feed, Explore, Discussions, Collabora
 
 ## v3 feature additions
 
-Static reference data (role list, subtags, demo impact tiers, default specialty journals, appraisal tools) lives in `data.js`, which loads before `app.js`.
+Static reference data (role list, subtags, demo impact tiers, default specialty journals, appraisal tools) lives in `src/data/reference.ts`.
 
 - **Curation controls**: time window (today → all time) and ranking (newest, most cited, hot/trending, most interest) on Home, Your Feed, specialty, and search. *Hot* = Europe PMC citations per day since publication, re-ranked within the loaded page. *Most interest* uses only this browser's own signals; no community data exists yet.
 - **Subtag bar**: quick topic chips across the top of Home, Your Feed, and specialty pages narrow the Europe PMC query.
@@ -61,11 +79,11 @@ Specialties use plain two-letter badges rather than artwork. Journal covers come
 
 ## Prototype limitations
 
-This is not a production application. It contains no login/identity verification, public posting, database, moderation, submissions, IRB verification, or live job board. Local drafts are stored in the browser `localStorage`, and example research papers/positions/projects are identified as demonstration samples. When Europe PMC cannot be reached, the feed falls back to clearly marked fictional papers for design demonstration. Do not confuse citation counts with research validity.
+This is not a production application. It contains no login/identity verification, public posting, database, moderation, submissions, IRB verification, or live job board. Local drafts are stored in the browser `localStorage` (through the mock API adapter), and example research papers/positions/projects are identified as demonstration samples. When Europe PMC cannot be reached, the feed falls back to clearly marked fictional papers for design demonstration. Do not confuse citation counts with research validity.
 
 ## Engineering handoff
 
-For production, migrate into a typed UI with reusable page/card components; introduce a real API layer for publication metadata, pagination, specialty classification, identity verification and moderated collaboration. Add server-backed accounts, privacy/consent and authorization, publication source licensing/attribution, accessible keyboard interactions, and automated tests before launch.
+The project now builds with Vite + TypeScript, and every read and write of Rounds data goes through a typed API layer (`src/api`) with a mock adapter (today's behaviour) and an HTTP adapter for the future backend. See `docs/BACKEND.md` for the contract, the localStorage → endpoint mapping, and open questions. Still to do: move the UI in `src/app.js` to typed, reusable page/card components; implement the backend (publication metadata, pagination, specialty classification, identity verification, moderated collaboration). Add server-backed accounts, privacy/consent and authorization, publication source licensing/attribution, accessible keyboard interactions, and automated tests before launch.
 
 ## Your Feed / Journal source controls (v3)
 

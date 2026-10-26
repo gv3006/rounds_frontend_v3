@@ -1,5 +1,7 @@
-/* Rounds static reference data. Loaded before app.js. No live or licensed metrics live here. */
-window.RoundsData={
+/* Rounds static reference data. No live or licensed metrics live here. */
+import type { ReferenceData } from '../types';
+
+export const referenceData: ReferenceData = {
 // Licensed / credentialed positions seen across a hospital. Tags are self-reported and stay "Verification pending" in this prototype.
 roles:[
 ['Physicians',['Physician (MD)','Physician (DO)','Resident physician','Fellow physician']],

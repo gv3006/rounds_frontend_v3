@@ -11,6 +11,10 @@ Rounds is a platform for discovering, evaluating, discussing, and collaborating 
 - Do not invent real papers, citations, statistics, or user activity. Clearly distinguish demo/mock content from real data.
 - Focus on the requested scope; do not add backend services, authentication, or integrations unless explicitly asked.
 
+## Project tooling
+- Vite + TypeScript. Scripts: `npm run dev`, `npm run typecheck`, `npm test` (Vitest), `npm run build`.
+- All Rounds data goes through `api` (`src/api`); never read or write `localStorage` or call the Rounds backend directly from UI code. New data needs a `RoundsApi` method, both adapters (`mock.ts`, `http.ts`), types in `src/types`, and an entry in `docs/openapi.yaml`.
+
 ## Mandatory quick check — after EVERY task
 Before reporting a task as finished, **verify your work**, even for small changes:
 1. Review your diff for mistakes, accidental deletions, unrelated changes, and obvious bugs; run `git diff --check` when Git is available.
